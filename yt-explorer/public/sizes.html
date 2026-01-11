@@ -1,0 +1,148 @@
+<!doctype html>
+<html>
+<head>
+<meta charset=utf-8>
+<title>YT Thumbs — Sizes</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;background:#000;color:#fff;font-family:system-ui,sans-serif;padding:14px}
+  textarea{width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid #333;background:#070707;color:#fff}
+  button{padding:8px 10px;margin-top:8px;border-radius:6px;border:none;background:#0a84ff;color:#fff;cursor:pointer}
+  #out{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
+  .thumb{display:block;width:320px;border-radius:8px;object-fit:cover;cursor:pointer}
+  .row{display:flex;flex-wrap:wrap;gap:12px}
+  /* modal */
+  #modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);align-items:center;justify-content:center;padding:20px}
+  .box{background:#0f0f0f;padding:14px;border-radius:10px;max-width:980px;width:100%;color:#fff}
+  .preview{max-width:100%;height:auto;border-radius:6px;display:block;margin-bottom:10px}
+  .sizes{display:flex;flex-wrap:wrap;gap:8px}
+  .sz{background:#222;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid #333}
+  .close{float:right;background:#222;border-radius:6px;padding:6px 8px;cursor:pointer}
+  @media(max-width:900px){.thumb{width:45vw}}
+</style>
+</head>
+<body>
+
+<textarea id=urls rows=6 placeholder="Paste YouTube links — one per line"></textarea>
+<div class=row>
+  <div style="flex:1"><button id=load>Load thumbnails</button></div>
+  <div style="width:12px"></div>
+  <label style="align-self:center"><input id=preferMax type=checkbox checked> Prefer maxres</label>
+</div>
+
+<div id=out></div>
+
+<!-- modal -->
+<div id=modal>
+  <div class=box>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="flex:1"><strong id=modalTitle">Choose size & download</strong></div>
+      <div class=close id=closeBtn>✕</div>
+    </div>
+    <img id=preview class=preview alt="preview">
+    <div class="sizes" id=sizeList></div>
+    <div style="margin-top:10px;color:#aaa;font-size:13px">If download fails (CORS), the image will open in a new tab so you can save it manually.</div>
+  </div>
+</div>
+
+<script>
+/* preset popular sizes (width x height) */
+const PRESETS = [
+  {w:3840,h:2160,label:"4K — 3840×2160"},
+  {w:1920,h:1080,label:"Full HD — 1920×1080"},
+  {w:1280,h:720,label:"HD — 1280×720"},
+  {w:1080,h:1080,label:"Square — 1080×1080"},
+  {w:1080,h:1350,label:"Instagram Tall — 1080×1350"},
+  {w:1200,h:628,label:"FB/Twitter Share — 1200×628"},
+  {w:2048,h:1152,label:"2048×1152"},
+  {w:800,h:800,label:"Small Square — 800×800"}
+];
+
+const idFrom = u => (u.match(/(youtu\.be\/|v=)([^&?\n]+)/)||[])[2];
+
+const out = document.getElementById('out');
+const modal = document.getElementById('modal');
+const preview = document.getElementById('preview');
+const sizeList = document.getElementById('sizeList');
+const preferMax = document.getElementById('preferMax');
+
+document.getElementById('load').onclick = () => {
+  out.innerHTML = '';
+  const lines = document.getElementById('urls').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  lines.forEach(u=>{
+    const id = idFrom(u);
+    if(!id) return;
+    const img = document.createElement('img');
+    img.className = 'thumb';
+    // try maxres first; if fails, fallback to hq
+    const tryMax = () => {
+      img.src = `https://img.youtube.com/vi/${id}/maxresdefault.jpg`;
+      img.dataset.srcBest = `https://img.youtube.com/vi/${id}/maxresdefault.jpg`;
+      img.onerror = () => { img.onerror=null; img.src=`https://img.youtube.com/vi/${id}/hqdefault.jpg`; img.dataset.srcBest=`https://img.youtube.com/vi/${id}/hqdefault.jpg`; }
+    };
+    const tryHq = () => {
+      img.src = `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
+      img.dataset.srcBest = `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
+    };
+    if(preferMax.checked) tryMax(); else tryHq();
+    img.alt = id;
+    img.addEventListener('click', ()=> openModal(img.dataset.srcBest || img.src, id));
+    out.appendChild(img);
+  });
+};
+
+// build modal size buttons once
+PRESETS.forEach(p=>{
+  const b = document.createElement('button');
+  b.className='sz';
+  b.textContent = p.label;
+  b.onclick = ()=> downloadAt(currentSrc,currentId,p.w,p.h);
+  sizeList.appendChild(b);
+});
+
+// modal handling
+let currentSrc='', currentId='';
+function openModal(src,id){
+  currentSrc = src; currentId = id;
+  preview.src = src;
+  modal.style.display = 'flex';
+}
+document.getElementById('closeBtn').onclick = ()=> modal.style.display='none';
+modal.addEventListener('click', e=>{ if(e.target===modal) modal.style.display='none' });
+
+/* attempt to download resized image via canvas (CORS may block) */
+async function downloadAt(src,id,w,h){
+  try{
+    // load image with crossOrigin attempt
+    const img = await loadImage(src,true);
+    const c = document.createElement('canvas'), x=c.getContext('2d');
+    c.width = w; c.height = h;
+    x.drawImage(img,0,0,c.width,c.height);
+    const data = c.toDataURL('image/png');
+    triggerDownload(data, `${id}_${w}x${h}.png`);
+  }catch(err){
+    // fallback: open the raw image in new tab so user can save (or right-click)
+    window.open(src,'_blank');
+  } finally {
+    modal.style.display='none';
+  }
+}
+
+function triggerDownload(dataURL, name){
+  const a = document.createElement('a');
+  a.href = dataURL; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+function loadImage(src, tryCross){
+  return new Promise((res,rej)=>{
+    const i = new Image();
+    if(tryCross) i.crossOrigin='anonymous';
+    i.onload = ()=> res(i);
+    i.onerror = e=> rej(e);
+    i.src = src;
+  });
+}
+</script>
+</body>
+</html>

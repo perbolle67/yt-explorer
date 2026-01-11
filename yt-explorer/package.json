@@ -1,7 +1,5 @@
 {
-  "name": "yt-explorer",
-  "private": true,
-  "dependencies": {
-    "node-fetch": "^3.3.2"
-  }
+  "name": "yt-explorer-netlify",
+  "version": "1.0.0",
+  "private": true
 }
