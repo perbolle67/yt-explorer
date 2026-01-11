@@ -1,0 +1,163 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Studio Thumbs — Swap Slots</title>
+<style>
+:root{--bg:#0f0f0f;--card:#141414;--muted:#9aa0a6}
+body{margin:0;background:var(--bg);color:#fff;font-family:system-ui;padding:16px}
+header{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+select,input,button{padding:8px;border-radius:6px;border:1px solid #222;background:#0b0b0b;color:#fff}
+button{cursor:pointer;background:#065fd4;border:none}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px;max-width:1100px}
+.card{background:var(--card);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;height:290px;box-shadow:0 6px 18px rgba(0,0,0,.6);outline:2px solid transparent}
+.card.sel{outline-color:#3ea6ff}
+.thumbWrap{position:relative;width:100%;padding-top:56.25%;background:#000}
+.thumbWrap img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.meta{padding:10px 12px;flex:0 0 120px;display:flex;flex-direction:column;justify-content:center}
+.title{font-size:13px;font-weight:600;line-height:1.15;margin-bottom:6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sub{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+.controls{display:flex;gap:8px;align-items:center;margin-top:10px}
+.previewArea{margin-top:12px;display:flex;gap:12px;align-items:center}
+.previewBox{width:220px;border-radius:8px;overflow:hidden;background:#0b0b0b;padding:6px;text-align:center}
+.previewBox img{width:100%;height:120px;object-fit:cover;display:block;border-radius:6px}
+.hint{font-size:13px;color:var(--muted)}
+@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header>
+  <select id="niche">
+    <option>gaming</option><option>fitness</option><option>tech</option><option>cooking</option>
+    <option>music</option><option>travel</option><option>business</option><option>education</option>
+  </select>
+
+  <input type="file" id="file" accept="image/*">
+  <button id="load">Load 6</button>
+
+  <div style="margin-left:auto" class="hint">Click to select → click another to swap • Double-click to open</div>
+</header>
+
+<div id="grid" class="grid"></div>
+
+<div class="previewArea">
+  <div class="previewBox">
+    <div style="font-size:13px;margin-bottom:8px">Custom preview (click to select)</div>
+    <img id="customPreview" src="" alt="">
+    <div class="hint" style="margin-top:8px">Upload an image then click it and click a slot to swap.</div>
+  </div>
+</div>
+
+<script>
+/* NOTE: No API key in browser. Calls Netlify function at /.netlify/functions/searchVideos?q=... */
+
+/* STATE */
+let cards = new Array(6).fill(null); // each: {type:'yt',id,title,channel,thumb} or {type:'custom',src,title}
+let selected = null; // index (0..5) or 'custom'
+let custom = null; // {type:'custom', src, title}
+
+/* HELPERS */
+const idFrom = u => (u.match(/(youtu\.be\/|v=)([^&?\n]+)/)||[])[2];
+const $ = id => document.getElementById(id);
+
+/* file upload -> custom preview */
+$('file').addEventListener('change', e=>{
+  const f = e.target.files && e.target.files[0];
+  if(!f) return;
+  custom = {type:'custom', src: URL.createObjectURL(f), title: 'Your image'};
+  $('customPreview').src = custom.src;
+  // auto-select custom when uploaded
+  selected = 'custom';
+  render();
+});
+
+/* click logic: pick then swap */
+function pick(i){
+  if(selected === null){
+    selected = i;
+  } else {
+    // swap selected <-> i
+    if(selected === i){ selected = null; render(); return; }
+    if(selected === 'custom' && i === 'custom'){ selected = null; render(); return; }
+    if(selected === 'custom'){
+      const tmp = cards[i];
+      cards[i] = custom;
+      custom = tmp && tmp.type==='custom' ? tmp : tmp ? {...tmp} : null;
+    } else if(i === 'custom'){
+      const tmp = cards[selected];
+      custom = tmp;
+      cards[selected] = null;
+    } else {
+      [cards[selected], cards[i]] = [cards[i], cards[selected]];
+    }
+    selected = null;
+  }
+  render();
+}
+
+/* double-click open */
+function openVideo(id){
+  if(!id) return;
+  window.open(`https://youtu.be/${id}`,'_blank');
+}
+
+/* render */
+function render(){
+  $('grid').innerHTML = cards.map((c,i)=>{
+    const isSel = (selected===i)?' sel':'';
+    if(!c) return `<div class="card${isSel}" onclick="pick(${i})"><div class="thumbWrap"><div style="position:absolute;inset:0;background:#111"></div></div><div class="meta"><div class="title">Empty</div><div class="sub"><span>Slot ${i+1}</span></div></div></div>`;
+    if(c.type==='custom') return `<div class="card${isSel}" onclick="pick(${i})"><div class="thumbWrap"><img src="${c.src}" alt="custom"></div><div class="meta"><div class="title">${escapeHtml(c.title)}</div><div class="sub"><span>Custom • Slot ${i+1}</span></div></div></div>`;
+    return `<div class="card${isSel}" onclick="pick(${i})" ondblclick="openVideo('${c.id}')"><div class="thumbWrap"><img src="${c.thumb}" alt=""></div><div class="meta"><div class="title">${escapeHtml(c.title)}</div><div class="sub"><span>${escapeHtml(c.channel)}</span><span>Slot ${i+1}</span></div></div></div>`;
+  }).join('');
+  // custom preview selection highlight
+  $('customPreview').style.outline = selected==='custom' ? '3px solid #3ea6ff' : 'none';
+}
+
+/* escape */
+function escapeHtml(s){ return (s||'').replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
+
+/* custom preview click -> select/deselect custom */
+$('customPreview').onclick = ()=>{
+  if(!custom) return;
+  selected = selected==='custom' ? null : 'custom';
+  render();
+};
+
+/* load via Netlify function (fills cards array) */
+$('load').onclick = async ()=>{
+  $('grid').textContent = 'Loading...';
+  const q = $('niche').value;
+  try{
+    // CALL the Netlify Function instead of YouTube directly
+    const s = await fetch(`/.netlify/functions/searchVideos?q=${encodeURIComponent(q)}`).then(r=>r.json());
+    // server returns the raw YouTube search response
+    const items = s.items || [];
+    const pick = arr=> arr.sort(()=>Math.random()-.5).slice(0,6);
+    const chosen = pick(items.length ? items : []);
+    const newCards = Array(6).fill(null);
+    let ci=0;
+    for(let i=0;i<6;i++){
+      if(cards[i] && cards[i].type==='custom'){ newCards[i]=cards[i]; continue; }
+      const it = chosen[ci++] || items[Math.floor(Math.random()*items.length)];
+      if(!it) { newCards[i]=null; continue; }
+      const id = it.id && it.id.videoId ? it.id.videoId : (it.videoId || '');
+      const thumb = (it.snippet.thumbnails && (it.snippet.thumbnails.standard?.url || it.snippet.thumbnails.high?.url || it.snippet.thumbnails.default?.url)) || `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
+      newCards[i] = {type:'yt', id, title: it.snippet.title, channel: it.snippet.channelTitle, thumb};
+    }
+    cards = newCards;
+    selected = null;
+    render();
+  }catch(e){
+    console.error(e);
+    alert('Load failed (server or API).');
+    $('grid').textContent = '';
+  }
+};
+
+/* init empty render */
+render();
+</script>
+</body>
+</html>
